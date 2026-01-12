@@ -63,14 +63,16 @@ export async function POST(
     );
   }
 
-  if (!process.env.AI_SERVICE_URL) {
+  const aiEnv =
+    process.env.AI_SERVICE_URL || process.env.NEXT_PUBLIC_AI_SERVICE_URL;
+  if (!aiEnv) {
     return NextResponse.json(
       { error: "AI service URL is not configured." },
       { status: 500 }
     );
   }
 
-  const aiServiceUrl = process.env.AI_SERVICE_URL.replace(/\/$/, "");
+  const aiServiceUrl = aiEnv.replace(/\/$/, "");
   if (!aiServiceUrl.startsWith("http")) {
     return NextResponse.json(
       { error: "AI service URL must start with http or https." },

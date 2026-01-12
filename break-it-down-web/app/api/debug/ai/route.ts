@@ -3,14 +3,16 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!process.env.AI_SERVICE_URL) {
+  const aiEnv =
+    process.env.AI_SERVICE_URL || process.env.NEXT_PUBLIC_AI_SERVICE_URL;
+  if (!aiEnv) {
     return NextResponse.json(
       { error: "AI service URL is not configured." },
       { status: 500 }
     );
   }
 
-  const aiServiceUrl = process.env.AI_SERVICE_URL.replace(/\/$/, "");
+  const aiServiceUrl = aiEnv.replace(/\/$/, "");
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
