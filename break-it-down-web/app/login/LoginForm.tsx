@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/browser";
 
 export default function LoginForm() {
@@ -11,6 +14,7 @@ export default function LoginForm() {
 
   const [status, setStatus] = useState<"idle" | "loading">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<"error" | "info">("info");
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -30,6 +34,7 @@ export default function LoginForm() {
 
     if (error) {
       setMessage(error.message);
+      setMessageTone("error");
       setStatus("idle");
       return;
     }
@@ -60,80 +65,88 @@ export default function LoginForm() {
 
     if (error) {
       setMessage(error.message);
+      setMessageTone("error");
       setStatus("idle");
       return;
     }
 
     setMessage("Check your email to confirm your account, then sign in.");
+    setMessageTone("info");
     setStatus("idle");
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
-      <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/70 p-8 shadow-xl">
-        <div className="space-y-2">
-          <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%),radial-gradient(circle_at_30%_20%,_rgba(148,163,184,0.18),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(241,245,249,0.9),_transparent_65%)]" />
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
             Break It Down
           </p>
-          <h1 className="text-3xl font-semibold">Sign in to continue</h1>
-          <p className="text-sm text-slate-400">
+          <CardTitle className="text-3xl">Sign in to continue</CardTitle>
+          <CardDescription>
             Use your email and password to access your tasks.
-          </p>
+          </CardDescription>
           {redirectedFrom ? (
-            <p className="text-xs text-amber-300">
+            <p className="text-xs text-amber-600">
               You were redirected from {redirectedFrom}.
             </p>
           ) : null}
-        </div>
+        </CardHeader>
 
-        <form onSubmit={handleSignIn} className="mt-6 space-y-4">
-          <label className="block text-sm text-slate-300">
-            Email
-            <input
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none ring-0 transition focus:border-slate-600"
-            />
-          </label>
-          <label className="block text-sm text-slate-300">
-            Password
-            <input
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              minLength={6}
-              className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none ring-0 transition focus:border-slate-600"
-            />
-          </label>
+        <CardContent>
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <label className="block text-sm text-slate-300">
+              Email
+              <Input
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="mt-2"
+              />
+            </label>
+            <label className="block text-sm text-slate-300">
+              Password
+              <Input
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                minLength={6}
+                className="mt-2"
+              />
+            </label>
 
-          {message ? (
-            <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300">
-              {message}
-            </p>
-          ) : null}
+            {message ? (
+              <div
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  messageTone === "error"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                {message}
+              </div>
+            ) : null}
 
-          <div className="flex flex-col gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={status === "loading"}
-              className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-500/70"
-            >
-              {status === "loading" ? "Signing in..." : "Sign in"}
-            </button>
-            <button
-              type="button"
-              onClick={handleSignUp}
-              disabled={status === "loading"}
-              className="rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed"
-            >
-              Create account
-            </button>
-          </div>
-        </form>
-      </div>
+            <div className="flex flex-col gap-3 pt-2">
+              <Button type="submit" disabled={status === "loading"} size="lg">
+                {status === "loading" ? "Signing in..." : "Sign in"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSignUp}
+                disabled={status === "loading"}
+                variant="outline"
+                size="lg"
+              >
+                Create account
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

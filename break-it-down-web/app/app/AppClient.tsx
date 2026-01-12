@@ -1,42 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/browser";
+import { Step, Task, TaskStatus } from "@/lib/types";
 
 type AppClientProps = {
   email: string;
+  initialTasks: Task[];
+  initialSteps: Step[];
 };
 
-type TaskStatus = "active" | "completed" | "archived";
-
-type Task = {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  created_at: string;
-};
-
-type Step = {
-  id: string;
-  task_id: string;
-  step_index: number;
-  text: string;
-  done: boolean;
-};
-
-export default function AppClient({ email }: AppClientProps) {
+export default function AppClient({
+  email,
+  initialTasks,
+  initialSteps,
+}: AppClientProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "loading">("idle");
   const supabase = useMemo(() => createClient(), []);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loadingTasks, setLoadingTasks] = useState(true);
-  const [stepsByTask, setStepsByTask] = useState<Record<string, Step[]>>({});
+  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [stepsByTask, setStepsByTask] = useState<Record<string, Step[]>>(() => {
+    const grouped: Record<string, Step[]> = {};
+    initialSteps.forEach((step) => {
+      grouped[step.task_id] ??= [];
+      grouped[step.task_id].push(step);
+    });
+    return grouped;
+  });
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
-  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [busyTaskIds, setBusyTaskIds] = useState<Set<string>>(new Set());
+  const [busyStepIds, setBusyStepIds] = useState<Set<string>>(new Set());
+  const [addingTask, setAddingTask] = useState(false);
 
   const handleSignOut = async () => {
     setStatus("loading");
@@ -45,52 +56,8 @@ export default function AppClient({ email }: AppClientProps) {
     router.refresh();
   };
 
-  useEffect(() => {
-    const loadTasks = async () => {
-      setLoadingTasks(true);
-      setTaskError(null);
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("id, title, status, created_at")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        setTaskError(error.message);
-      } else {
-        setTasks((data ?? []) as Task[]);
-      }
-    };
-
-    const loadSteps = async () => {
-      const { data, error } = await supabase
-        .from("steps")
-        .select("id, task_id, step_index, text, done")
-        .order("step_index", { ascending: true });
-
-      if (error) {
-        setTaskError(error.message);
-        return;
-      }
-
-      const grouped: Record<string, Step[]> = {};
-      (data ?? []).forEach((step) => {
-        grouped[step.task_id] ??= [];
-        grouped[step.task_id].push(step as Step);
-      });
-      setStepsByTask(grouped);
-    };
-
-    const loadData = async () => {
-      await loadTasks();
-      await loadSteps();
-      setLoadingTasks(false);
-    };
-
-    loadData();
-  }, [supabase]);
-
-  const setBusy = (taskId: string, isBusy: boolean) => {
-    setBusyIds((prev) => {
+  const setTaskBusy = (taskId: string, isBusy: boolean) => {
+    setBusyTaskIds((prev) => {
       const next = new Set(prev);
       if (isBusy) {
         next.add(taskId);
@@ -101,13 +68,28 @@ export default function AppClient({ email }: AppClientProps) {
     });
   };
 
+  const setStepBusy = (stepId: string, isBusy: boolean) => {
+    setBusyStepIds((prev) => {
+      const next = new Set(prev);
+      if (isBusy) {
+        next.add(stepId);
+      } else {
+        next.delete(stepId);
+      }
+      return next;
+    });
+  };
+
   const handleAddTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newTitle.trim()) {
+      setFormError("Add a short task title to continue.");
       return;
     }
 
     setTaskError(null);
+    setFormError(null);
+    setAddingTask(true);
     const title = newTitle.trim();
     setNewTitle("");
 
@@ -120,22 +102,25 @@ export default function AppClient({ email }: AppClientProps) {
     if (error) {
       setTaskError(error.message);
       setNewTitle(title);
+      setAddingTask(false);
       return;
     }
 
     if (data) {
       setTasks((prev) => [data as Task, ...prev]);
     }
+    setAddingTask(false);
   };
 
   const handleDelete = async (taskId: string) => {
-    setBusy(taskId, true);
+    setTaskBusy(taskId, true);
     setTaskError(null);
+    setFormError(null);
     const { error } = await supabase.from("tasks").delete().eq("id", taskId);
 
     if (error) {
       setTaskError(error.message);
-      setBusy(taskId, false);
+      setTaskBusy(taskId, false);
       return;
     }
 
@@ -145,11 +130,11 @@ export default function AppClient({ email }: AppClientProps) {
       delete next[taskId];
       return next;
     });
-    setBusy(taskId, false);
+    setTaskBusy(taskId, false);
   };
 
   const updateTask = async (taskId: string, updates: Partial<Task>) => {
-    setBusy(taskId, true);
+    setTaskBusy(taskId, true);
     setTaskError(null);
     const { data, error } = await supabase
       .from("tasks")
@@ -160,7 +145,7 @@ export default function AppClient({ email }: AppClientProps) {
 
     if (error) {
       setTaskError(error.message);
-      setBusy(taskId, false);
+      setTaskBusy(taskId, false);
       return;
     }
 
@@ -170,7 +155,7 @@ export default function AppClient({ email }: AppClientProps) {
       );
     }
 
-    setBusy(taskId, false);
+    setTaskBusy(taskId, false);
   };
 
   const handleToggleComplete = async (task: Task) => {
@@ -179,8 +164,10 @@ export default function AppClient({ email }: AppClientProps) {
     await updateTask(task.id, { status: nextStatus });
   };
 
-  const handleArchive = async (taskId: string) => {
-    await updateTask(taskId, { status: "archived" });
+  const handleArchiveToggle = async (task: Task) => {
+    const nextStatus: TaskStatus =
+      task.status === "archived" ? "active" : "archived";
+    await updateTask(task.id, { status: nextStatus });
   };
 
   const startEditing = (task: Task) => {
@@ -195,6 +182,7 @@ export default function AppClient({ email }: AppClientProps) {
 
   const submitEditing = async (taskId: string) => {
     if (!editingTitle.trim()) {
+      setTaskError("Task title cannot be empty.");
       return;
     }
     await updateTask(taskId, { title: editingTitle.trim() });
@@ -202,7 +190,7 @@ export default function AppClient({ email }: AppClientProps) {
   };
 
   const handleGenerateSteps = async (taskId: string) => {
-    setBusy(taskId, true);
+    setTaskBusy(taskId, true);
     setTaskError(null);
 
     const response = await fetch(`/api/tasks/${taskId}/generate-steps`, {
@@ -212,7 +200,7 @@ export default function AppClient({ email }: AppClientProps) {
     if (!response.ok) {
       const payload = (await response.json()) as { error?: string };
       setTaskError(payload.error ?? "Failed to generate steps.");
-      setBusy(taskId, false);
+      setTaskBusy(taskId, false);
       return;
     }
 
@@ -224,12 +212,13 @@ export default function AppClient({ email }: AppClientProps) {
       ...prev,
       [taskId]: orderedSteps,
     }));
-    setBusy(taskId, false);
+    setTaskBusy(taskId, false);
   };
 
   const handleToggleStep = async (step: Step) => {
-    setBusy(step.task_id, true);
+    setStepBusy(step.id, true);
     setTaskError(null);
+    setFormError(null);
 
     const { data, error } = await supabase
       .from("steps")
@@ -240,7 +229,7 @@ export default function AppClient({ email }: AppClientProps) {
 
     if (error) {
       setTaskError(error.message);
-      setBusy(step.task_id, false);
+      setStepBusy(step.id, false);
       return;
     }
 
@@ -253,235 +242,267 @@ export default function AppClient({ email }: AppClientProps) {
       }));
     }
 
-    setBusy(step.task_id, false);
+    setStepBusy(step.id, false);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%),radial-gradient(circle_at_30%_20%,_rgba(148,163,184,0.18),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(241,245,249,0.9),_transparent_65%)]" />
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-8">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
             Break It Down
           </p>
           <h1 className="text-2xl font-semibold">Your workspace</h1>
         </div>
-        <button
+        <Button
           onClick={handleSignOut}
           disabled={status === "loading"}
-          className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed"
+          variant="outline"
+          size="sm"
         >
           {status === "loading" ? "Signing out..." : "Logout"}
-        </button>
+        </Button>
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 pb-16">
-        <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
-          <p className="text-sm text-slate-400">Signed in as</p>
-          <p className="mt-2 text-lg font-semibold text-slate-100">{email}</p>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardDescription>Signed in as</CardDescription>
+            <CardTitle className="text-xl text-slate-900">{email}</CardTitle>
+          </CardHeader>
+        </Card>
 
-        <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">Add a task</h2>
-              <p className="text-sm text-slate-400">
-                Keep it top-level. Steps come later.
-              </p>
-            </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Add a task</CardTitle>
+            <CardDescription>
+              Keep it top-level. Steps come later.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <form onSubmit={handleAddTask} className="flex flex-col gap-3">
-              <input
-                value={newTitle}
-                onChange={(event) => setNewTitle(event.target.value)}
-                placeholder="Example: Plan the weekend trip"
-                className="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-slate-600"
-              />
-              <button
-                type="submit"
-                className="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-              >
-                Add task
-              </button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={newTitle}
+                  onChange={(event) => {
+                    setNewTitle(event.target.value);
+                    if (formError) {
+                      setFormError(null);
+                    }
+                  }}
+                  placeholder="Add a new task"
+                  aria-invalid={formError ? true : undefined}
+                />
+                <Button
+                  type="submit"
+                  size="md"
+                  disabled={addingTask}
+                  className="h-11 w-full sm:w-12 sm:px-0"
+                  aria-label="Add task"
+                >
+                  {addingTask ? "..." : "+"}
+                </Button>
+              </div>
+              {formError ? (
+                <p className="text-xs text-rose-600">{formError}</p>
+              ) : null}
             </form>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Your tasks</h2>
-            <span className="text-xs text-slate-400">
-              {tasks.length} total
-            </span>
-          </div>
-
-          {taskError ? (
-            <p className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              {taskError}
-            </p>
-          ) : null}
-
-          {loadingTasks ? (
-            <p className="mt-4 text-sm text-slate-400">Loading tasks...</p>
-          ) : tasks.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-400">
-              No tasks yet. Add one above.
-            </p>
-          ) : (
-            <div className="mt-6 space-y-4">
-              {tasks.map((task) => {
-                const isBusy = busyIds.has(task.id);
-                const isEditing = editingId === task.id;
-                const taskSteps = stepsByTask[task.id] ?? [];
-                const hasSteps = taskSteps.length > 0;
-                return (
-                  <div
-                    key={task.id}
-                    className="rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex flex-1 flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <StatusPill status={task.status} />
-                          <span className="text-xs text-slate-500">
-                            {new Date(task.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        {isEditing ? (
-                          <input
-                            value={editingTitle}
-                            onChange={(event) =>
-                              setEditingTitle(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-slate-600"
-                          />
-                        ) : (
-                          <p
-                            className={`text-base font-semibold ${
-                              task.status === "archived"
-                                ? "text-slate-500 line-through"
-                                : task.status === "completed"
-                                  ? "text-emerald-200 line-through"
-                                  : "text-slate-100"
-                            }`}
-                          >
-                            {task.title}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        {isEditing ? (
-                          <>
-                            <button
-                              onClick={() => submitEditing(task.id)}
-                              disabled={isBusy}
-                              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={cancelEditing}
-                              disabled={isBusy}
-                              className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {!hasSteps ? (
-                              <button
-                                onClick={() => handleGenerateSteps(task.id)}
-                                disabled={isBusy}
-                                className="rounded-full border border-sky-500/40 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:border-sky-400 disabled:cursor-not-allowed disabled:text-slate-500"
-                              >
-                                {isBusy ? "Working..." : "Break it down"}
-                              </button>
-                            ) : null}
-                            <button
-                              onClick={() => startEditing(task)}
-                              disabled={isBusy || task.status === "archived"}
-                              className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:text-slate-500"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleToggleComplete(task)}
-                              disabled={isBusy || task.status === "archived"}
-                              className="rounded-full border border-emerald-500/50 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 disabled:cursor-not-allowed disabled:text-slate-500"
-                            >
-                              {task.status === "completed"
-                                ? "Mark active"
-                                : "Complete"}
-                            </button>
-                            <button
-                              onClick={() => handleArchive(task.id)}
-                              disabled={isBusy || task.status === "archived"}
-                              className="rounded-full border border-amber-500/40 px-3 py-1 text-xs font-semibold text-amber-200 transition hover:border-amber-400 disabled:cursor-not-allowed disabled:text-slate-500"
-                            >
-                              Archive
-                            </button>
-                            <button
-                              onClick={() => handleDelete(task.id)}
-                              disabled={isBusy}
-                              className="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:border-rose-400 disabled:cursor-not-allowed disabled:text-slate-500"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {hasSteps ? (
-                      <div className="mt-4 space-y-2 border-t border-slate-800 pt-4">
-                        {taskSteps.map((step) => (
-                          <label
-                            key={step.id}
-                            className="flex items-start gap-3 text-sm text-slate-200"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={step.done}
-                              onChange={() => handleToggleStep(step)}
-                              disabled={isBusy}
-                              className="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
-                            />
-                            <span
-                              className={
-                                step.done
-                                  ? "text-slate-500 line-through"
-                                  : "text-slate-200"
-                              }
-                            >
-                              {step.text}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <div>
+              <CardTitle>Your tasks</CardTitle>
+              <CardDescription>
+                {tasks.length} total tasks
+              </CardDescription>
             </div>
-          )}
-        </section>
+          </CardHeader>
+          <CardContent>
+            {taskError ? (
+              <Alert className="mb-4">
+                <AlertTitle>Something went wrong</AlertTitle>
+                <AlertDescription>{taskError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {tasks.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                No tasks yet. Add one above to get started.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {tasks.map((task) => {
+                  const isTaskBusy = busyTaskIds.has(task.id);
+                  const isEditing = editingId === task.id;
+                  const taskSteps = stepsByTask[task.id] ?? [];
+                  const hasSteps = taskSteps.length > 0;
+                  return (
+                    <Card key={task.id} className="border-slate-200 bg-white">
+                      <CardContent className="pt-6">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-1 flex-col gap-2">
+                            <div className="flex items-center gap-3">
+                              <StatusPill status={task.status} />
+                              <span className="text-xs text-slate-500">
+                                {new Date(task.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            {isEditing ? (
+                              <Input
+                                value={editingTitle}
+                                onChange={(event) =>
+                                  setEditingTitle(event.target.value)
+                                }
+                                className="h-10 rounded-xl"
+                              />
+                            ) : (
+                              <p
+                                className={`text-base font-semibold ${
+                                  task.status === "archived"
+                                    ? "text-slate-400 line-through"
+                                    : task.status === "completed"
+                                      ? "text-slate-500 line-through"
+                                      : "text-slate-900"
+                                }`}
+                              >
+                                {task.title}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {isEditing ? (
+                              <>
+                                <Button
+                                  onClick={() => submitEditing(task.id)}
+                                  disabled={isTaskBusy}
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  onClick={cancelEditing}
+                                  disabled={isTaskBusy}
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                {!hasSteps ? (
+                                  <Button
+                                    onClick={() =>
+                                      handleGenerateSteps(task.id)
+                                    }
+                                    disabled={
+                                      isTaskBusy || task.status === "archived"
+                                    }
+                                    variant="default"
+                                    size="sm"
+                                    className="rounded-lg"
+                                  >
+                                    {isTaskBusy ? "Working..." : "Break it down"}
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  onClick={() => startEditing(task)}
+                                  disabled={
+                                    isTaskBusy || task.status === "archived"
+                                  }
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  onClick={() => handleToggleComplete(task)}
+                                  disabled={
+                                    isTaskBusy || task.status === "archived"
+                                  }
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  {task.status === "completed"
+                                    ? "Mark active"
+                                    : "Complete"}
+                                </Button>
+                                <Button
+                                  onClick={() => handleArchiveToggle(task)}
+                                  disabled={isTaskBusy}
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  {task.status === "archived"
+                                    ? "Unarchive"
+                                    : "Archive"}
+                                </Button>
+                                <Button
+                                  onClick={() => handleDelete(task.id)}
+                                  disabled={isTaskBusy}
+                                  variant="destructive"
+                                  size="sm"
+                                  className="rounded-lg"
+                                >
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {hasSteps ? (
+                          <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+                            {taskSteps.map((step) => (
+                              <label
+                                key={step.id}
+                                className="flex items-start gap-3 text-sm text-slate-700"
+                              >
+                                <Checkbox
+                                  checked={step.done}
+                                  onChange={() => handleToggleStep(step)}
+                                  disabled={busyStepIds.has(step.id)}
+                                />
+                                <span
+                                  className={
+                                    step.done
+                                      ? "text-slate-400 line-through"
+                                      : "text-slate-700"
+                                  }
+                                >
+                                  {step.text}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
 }
 
 function StatusPill({ status }: { status: TaskStatus }) {
-  const styles =
-    status === "active"
-      ? "bg-sky-500/10 text-sky-200 border-sky-500/40"
-      : status === "completed"
-        ? "bg-emerald-500/10 text-emerald-200 border-emerald-500/40"
-        : "bg-slate-500/10 text-slate-300 border-slate-500/40";
-
-  return (
-    <span
-      className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${styles}`}
-    >
-      {status}
-    </span>
-  );
+  if (status === "completed") {
+    return <Badge variant="success">{status}</Badge>;
+  }
+  if (status === "archived") {
+    return <Badge variant="muted">{status}</Badge>;
+  }
+  return <Badge variant="default">{status}</Badge>;
 }
