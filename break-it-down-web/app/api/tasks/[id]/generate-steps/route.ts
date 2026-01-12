@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+
 type RouteParams = {
   params: Promise<{
     id: string;
@@ -104,8 +106,9 @@ export async function POST(
       error instanceof DOMException && error.name === "AbortError"
         ? "AI service timed out."
         : "Failed to reach AI service.";
+    const detail = error instanceof Error ? error.message : String(error);
     console.error("[generate-steps] AI fetch failed", error);
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message, detail }, { status: 502 });
   } finally {
     clearTimeout(timeoutId);
   }
