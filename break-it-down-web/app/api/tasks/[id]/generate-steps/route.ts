@@ -61,9 +61,20 @@ export async function POST(
     );
   }
 
-  const aiServiceUrl =
-    process.env.AI_SERVICE_URL?.replace(/\/$/, "") ||
-    "http://localhost:8000";
+  if (!process.env.AI_SERVICE_URL) {
+    return NextResponse.json(
+      { error: "AI service URL is not configured." },
+      { status: 500 }
+    );
+  }
+
+  const aiServiceUrl = process.env.AI_SERVICE_URL.replace(/\/$/, "");
+  if (!aiServiceUrl.startsWith("http")) {
+    return NextResponse.json(
+      { error: "AI service URL must start with http or https." },
+      { status: 500 }
+    );
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
