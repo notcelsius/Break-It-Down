@@ -6,5 +6,6 @@ __pycache__/
 *.egg-info/
 Procfile
 *.zip
+*.txt
 .zip
 break-it-down-ai/Procfile
