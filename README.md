@@ -8,7 +8,7 @@ A to-do app that lets a user create tasks and generate exactly 3 actionable step
 break-it-down/
 ├── break-it-down-web/        # Next.js app (frontend + API routes)
 ├── break-it-down-ai/         # FastAPI AI service
-└── README_GITHUB.md
+└── README.md
 ```
 
 ## Prerequisites
